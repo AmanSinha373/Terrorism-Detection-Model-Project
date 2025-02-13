@@ -1,74 +1,85 @@
-from flask import Flask, request, jsonify
+import tkinter as tk
+from tkinter import filedialog, messagebox
+from PIL import Image, ImageTk
 import numpy as np
-import joblib
-import cv2
-import os
-from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing.image import img_to_array
+import pickle
+import tensorflow as tf
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
 
-# Initialize Flask app
-app = Flask(__name__)
+# Load models
+from joblib import load
 
-# Load Text Classification Models
-nb_model = joblib.load(r"D:\Project\naive_bayes_text_model.pkl")
-text_nn_model = load_model(r"D:\Project\text_nn_model.keras")
-vectorizer = joblib.load(r"D:\Project\tfidf_vectorizer.pkl")
-
-# Load Image Classification Model
-image_model = load_model(r"D:\Project\cnn_image_model.keras")
-
-# Set Image Input Size
-IMG_SIZE = 128
-
-###TEXT CLASSIFICATION API ###
-import time  # Add this at the top
-
-@app.route("/predict-image", methods=["POST"])
-def predict_image():
-    if "image" not in request.files:
-        return jsonify({"error": "No image file provided"}), 400
-
-    image_file = request.files["image"]
-    image_path = f"temp_{int(time.time())}.jpg"  # Use unique name to avoid conflicts
-    image_file.save(image_path)
-
-    # Debugging: Check if file exists
-    if not os.path.exists(image_path):
-        return jsonify({"error": "Flask failed to save the image."}), 500
-
-    # Debugging: Check file size
-    file_size = os.path.getsize(image_path)
-    if file_size == 0:
-        return jsonify({"error": "Saved file is empty. Check upload format."}), 400
-
-    # Try reading the image
-    img = cv2.imread(image_path)
-    if img is None:
-        return jsonify({"error": "OpenCV failed to load the image. Try PNG or JPG."}), 400
-
-    # Preprocess Image
-    img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
-    img = img / 255.0
-    img = np.expand_dims(img, axis=0)
-
-    # Predict
-    prediction = image_model.predict(img)[0][0]
-    label = "Terrorist" if prediction > 0.5 else "Non-Terrorist"
-
-    # Clean up
-    os.remove(image_path)
-
-    return jsonify({
-        "Image_Prediction": label,
-        "Confidence": float(prediction)
-    })
+vectorizer = load("tfidf_vectorizer.pkl")  # ✅ Works correctly
 
 
-### API HOME ###
-@app.route("/", methods=["GET"])
-def home():
-    return jsonify({"message": "Terrorism Detection API is running!"})
+text_nn_model = tf.keras.models.load_model("text_nn_model.keras")
+cnn_model = tf.keras.models.load_model("cnn_image_model.keras")
 
-# Run Flask App
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+
+nb_model = load("naive_bayes_text_model.pkl")  # ✅ Naive Bayes Model (should have predict method)
+
+# Function to classify text
+def classify_text():
+    text = text_entry.get("1.0", tk.END).strip()
+    if not text:
+        messagebox.showerror("Error", "Please enter text")
+        return
+    
+    text_vectorized = vectorizer.transform([text])
+    nb_prediction = nb_model.predict(text_vectorized)[0]
+    nn_prediction = text_nn_model.predict(text_vectorized.toarray())[0][0]
+    
+    nb_result = "Terrorist" if nb_prediction == 1 else "Non-Terrorist"
+    nn_result = "Terrorist" if nn_prediction > 0.8 else "Non-Terrorist"
+    
+    nb_label.config(text=f"Naïve Bayes: {nb_result}")
+    nn_label.config(text=f"Neural Network: {nn_result}")
+
+# Function to classify image
+def classify_image():
+    file_path = filedialog.askopenfilename(filetypes=[("Image Files", "*.png;*.jpg;*.jpeg")])
+    if not file_path:
+        return
+    
+    img = load_img(file_path, target_size=(128, 128))
+    img_array = img_to_array(img) / 255.0
+    img_array = np.expand_dims(img_array, axis=0)
+    
+    prediction = cnn_model.predict(img_array)[0][0]
+    result = "Terrorist Image" if prediction > 0.5 else "Non-Terrorist Image"
+    
+    cnn_label.config(text=f"CNN Prediction: {result}")
+    
+    # Display image
+    img = Image.open(file_path)
+    img.thumbnail((150, 150))
+    img = ImageTk.PhotoImage(img)
+    img_label.config(image=img)
+    img_label.image = img
+
+# GUI Setup
+root = tk.Tk()
+root.title("Terrorism Detection Model")
+root.geometry("500x500")
+
+# Text Input Box
+text_frame = tk.LabelFrame(root, text="Text Classification")
+text_frame.pack(pady=10, fill="both", expand=True)
+text_entry = tk.Text(text_frame, height=5, width=50)
+text_entry.pack()
+tk.Button(text_frame, text="Classify Text", command=classify_text).pack()
+nb_label = tk.Label(text_frame, text="Naïve Bayes: ")
+nb_label.pack()
+nn_label = tk.Label(text_frame, text="Neural Network: ")
+nn_label.pack()
+
+# Image Input Box
+image_frame = tk.LabelFrame(root, text="Image Classification")
+image_frame.pack(pady=10, fill="both", expand=True)
+tk.Button(image_frame, text="Upload Image", command=classify_image).pack()
+cnn_label = tk.Label(image_frame, text="CNN Prediction: ")
+cnn_label.pack()
+img_label = tk.Label(image_frame)
+img_label.pack()
+
+root.mainloop()
