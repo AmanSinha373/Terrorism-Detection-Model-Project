@@ -1,85 +1,102 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox
-from PIL import Image, ImageTk
+import streamlit as st
+import time
 import numpy as np
 import pickle
 import tensorflow as tf
-from tensorflow.keras.preprocessing.image import load_img, img_to_array
+from PIL import Image
+from tensorflow.keras.preprocessing.image import img_to_array
+from joblib import load
+import streamlit.components.v1 as components
+import random
 
 # Load models
 from joblib import load
 
-vectorizer = load("tfidf_vectorizer.pkl")  # ✅ Works correctly
-
-
+# Load models
+vectorizer = load("tfidf_vectorizer.pkl")
+nb_model = load("naive_bayes_text_model.pkl") 
 text_nn_model = tf.keras.models.load_model("text_nn_model.keras")
 cnn_model = tf.keras.models.load_model("cnn_image_model.keras")
 
+# Streamlit UI
+st.title("🛡️ Terrorism Detection Model")
+# Themed Animation
+st.markdown(
+    """
+    <style>
+    @keyframes flicker {
+        0% { opacity: 1; }
+        50% { opacity: 0.1; }
+        100% { opacity: 1; }
+    }
+    .hacker-text {
+        font-size: 30px;
+        color: #00FF00;
+        font-family: 'Courier New', monospace;
+        text-shadow: 0px 0px 5px #00FF00;
+        animation: flicker 1s infinite;
+    }
+    .background {
+        background-color: black;
+        color: #00FF00;
+        font-family: 'Courier New', monospace;
+    }
+    </style>
+    <div class="background">
+    <h1 class="hacker-text">⚠️  System Activated ⚠️</h1>
+    <p class="hacker-text">Tracking Terrorist Activities...</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-nb_model = load("naive_bayes_text_model.pkl")  # ✅ Naive Bayes Model (should have predict method)
+# Simulated Loading Effect
+with st.spinner("Initializing ..."):
+    time.sleep(3)
 
-# Function to classify text
-def classify_text():
-    text = text_entry.get("1.0", tk.END).strip()
-    if not text:
-        messagebox.showerror("Error", "Please enter text")
-        return
-    
-    text_vectorized = vectorizer.transform([text])
-    nb_prediction = nb_model.predict(text_vectorized)[0]
-    nn_prediction = text_nn_model.predict(text_vectorized.toarray())[0][0]
-    
-    nb_result = "Terrorist" if nb_prediction == 1 else "Non-Terrorist"
-    nn_result = "Terrorist" if nn_prediction > 0.8 else "Non-Terrorist"
-    
-    nb_label.config(text=f"Naïve Bayes: {nb_result}")
-    nn_label.config(text=f"Neural Network: {nn_result}")
+st.success("✅ Secure System Ready!")
 
-# Function to classify image
-def classify_image():
-    file_path = filedialog.askopenfilename(filetypes=[("Image Files", "*.png;*.jpg;*.jpeg")])
-    if not file_path:
-        return
-    
-    img = load_img(file_path, target_size=(128, 128))
+# ---- TEXT CLASSIFICATION ----
+st.header("📜 Text Scan")
+user_text = st.text_area("🔍 Enter a message for analysis:")
+if st.button("🕵️ Scan Text"):
+    if user_text.strip():
+        text_vectorized = vectorizer.transform([user_text])
+        
+        nb_prediction = nb_model.predict(text_vectorized)[0]
+        nn_prediction = text_nn_model.predict(text_vectorized.toarray())[0][0]
+
+        st.markdown(
+            f"<h3 class='hacker-text'>📡 Report:</h3>",
+            unsafe_allow_html=True
+        )
+        st.write(f"🧠 **Naïve Bayes Analysis:** {'🚨 ALERT: Possible Threat' if nb_prediction == 1 else '✅ Safe Communication'}")
+        st.write(f"🤖 **Neural Network Analysis:** {'🚨 ALERT: Possible Threat' if nn_prediction > 0.8 else '✅ Safe Communication'}")
+
+    else:
+        st.warning("⚠️ Please enter some text.")
+
+# ---- IMAGE CLASSIFICATION ----
+st.header("🖼️ Image Scan")
+uploaded_image = st.file_uploader("Upload an image for analysis:", type=["jpg", "png", "jpeg"])
+
+if uploaded_image is not None:
+    img = Image.open(uploaded_image)
+    st.image(img, caption="🖼️ Uploaded Image", width=250)
+
+    # Preprocess image
+    img = img.resize((128, 128))
     img_array = img_to_array(img) / 255.0
     img_array = np.expand_dims(img_array, axis=0)
-    
+
+    # Predict
     prediction = cnn_model.predict(img_array)[0][0]
-    result = "Terrorist Image" if prediction > 0.5 else "Non-Terrorist Image"
-    
-    cnn_label.config(text=f"CNN Prediction: {result}")
-    
-    # Display image
-    img = Image.open(file_path)
-    img.thumbnail((150, 150))
-    img = ImageTk.PhotoImage(img)
-    img_label.config(image=img)
-    img_label.image = img
+    result = "🚨 ALERT: Terrorist Image Detected!" if prediction > 0.5 else "✅ No Threat Detected"
 
-# GUI Setup
-root = tk.Tk()
-root.title("Terrorism Detection Model")
-root.geometry("500x500")
+    # FBI Terminal-Style Output
+    st.markdown(
+        f"<h3 class='hacker-text'>📡 Image Report:</h3>",
+        unsafe_allow_html=True
+    )
+    st.write(f"📷 **CNN Analysis:** {result}")
 
-# Text Input Box
-text_frame = tk.LabelFrame(root, text="Text Classification")
-text_frame.pack(pady=10, fill="both", expand=True)
-text_entry = tk.Text(text_frame, height=5, width=50)
-text_entry.pack()
-tk.Button(text_frame, text="Classify Text", command=classify_text).pack()
-nb_label = tk.Label(text_frame, text="Naïve Bayes: ")
-nb_label.pack()
-nn_label = tk.Label(text_frame, text="Neural Network: ")
-nn_label.pack()
-
-# Image Input Box
-image_frame = tk.LabelFrame(root, text="Image Classification")
-image_frame.pack(pady=10, fill="both", expand=True)
-tk.Button(image_frame, text="Upload Image", command=classify_image).pack()
-cnn_label = tk.Label(image_frame, text="CNN Prediction: ")
-cnn_label.pack()
-img_label = tk.Label(image_frame)
-img_label.pack()
-
-root.mainloop()
